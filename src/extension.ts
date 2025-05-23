@@ -10,7 +10,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const unitTestExplorerProvider = new UnitTestExplorerProvider(
     context.extensionUri,
-    authService
+    authService,
+    apiService
   );
 
   const chatProvider = new ChatProvider(context.extensionUri);

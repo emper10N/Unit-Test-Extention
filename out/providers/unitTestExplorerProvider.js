@@ -2,9 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UnitTestExplorerProvider = void 0;
 class UnitTestExplorerProvider {
-    constructor(_extensionUri, _authService) {
+    constructor(_extensionUri, _authService, _apiService) {
         this._extensionUri = _extensionUri;
         this._authService = _authService;
+        this._apiService = _apiService;
     }
     resolveWebviewView(webviewView, context, _token) {
         this._view = webviewView;
@@ -18,6 +19,13 @@ class UnitTestExplorerProvider {
             switch (data.type) {
                 case "login":
                     try {
+                        if (!this.validateUsername(data.username)) {
+                            this._view?.webview.postMessage({
+                                type: "loginError",
+                                error: "Username can only contain letters and digits",
+                            });
+                            return;
+                        }
                         await this._authService.login(data.username, data.password);
                         this._view?.webview.postMessage({
                             type: "loginSuccess",
@@ -33,12 +41,18 @@ class UnitTestExplorerProvider {
                     break;
                 case "register":
                     try {
+                        if (!this.validateUsername(data.username)) {
+                            this._view?.webview.postMessage({
+                                type: "registerError",
+                                error: "Username can only contain letters and digits",
+                            });
+                            return;
+                        }
                         await this._authService.register(data.username, data.password);
                         this._view?.webview.postMessage({
                             type: "registerSuccess",
                             user: { username: data.username },
                         });
-                        // Auto login after successful registration
                         await this._authService.login(data.username, data.password);
                     }
                     catch (error) {
@@ -60,9 +74,51 @@ class UnitTestExplorerProvider {
                         });
                     }
                     break;
+                case "createChat":
+                    try {
+                        const isAuthenticated = await this._authService.checkAuth();
+                        if (!isAuthenticated) {
+                            this._view?.webview.postMessage({
+                                type: "chatError",
+                                error: "You must be logged in to create a chat",
+                            });
+                            return;
+                        }
+                        if (!data.name || typeof data.name !== "string") {
+                            this._view?.webview.postMessage({
+                                type: "chatError",
+                                error: "Invalid chat name",
+                            });
+                            return;
+                        }
+                        const trimmedName = data.name.trim();
+                        if (!this.validateChatName(trimmedName)) {
+                            this._view?.webview.postMessage({
+                                type: "chatError",
+                                error: "Chat name can only contain letters, digits, spaces and basic punctuation",
+                            });
+                            return;
+                        }
+                        console.log("Creating chat with name:", trimmedName);
+                        const result = await this._apiService.post("/api/v1/chats", {
+                            name: trimmedName,
+                        });
+                        console.log("Chat created successfully:", result);
+                        this._view?.webview.postMessage({
+                            type: "chatCreated",
+                            chatId: result.chatId,
+                        });
+                    }
+                    catch (error) {
+                        console.error("Error creating chat:", error);
+                        this._view?.webview.postMessage({
+                            type: "chatError",
+                            error: error.message || "Failed to create chat",
+                        });
+                    }
+                    break;
             }
         });
-        // Initial load - always show auth container first
         this._view?.webview.postMessage({
             type: "showAuth",
         });
@@ -200,7 +256,6 @@ class UnitTestExplorerProvider {
                 <div id="content" style="display: none;">
                     <div id="user-info" class="user-info">
                         <div id="user-name"></div>
-                        <button id="create-chat-button">Create Chat</button>
                     </div>
                     
                     <h2>Unit Test Explorer</h2>
@@ -288,7 +343,7 @@ class UnitTestExplorerProvider {
 
                     // Handle create chat
                     document.getElementById('create-chat-button').addEventListener('click', () => {
-                        const chatName = prompt('Enter chat name:');
+                        const chatName = 'CHAT';
                         if (chatName) {
                             vscode.postMessage({
                                 type: 'createChat',
@@ -356,6 +411,14 @@ class UnitTestExplorerProvider {
             </script>
         </body>
         </html>`;
+    }
+    validateUsername(username) {
+        // Проверяем, что имя пользователя содержит только буквы и цифры
+        return /^[a-zA-Z0-9]+$/.test(username);
+    }
+    validateChatName(name) {
+        // Проверяем, что имя чата содержит только буквы, цифры, пробелы и базовую пунктуацию
+        return /^[a-zA-Z0-9\s.,!?-]+$/.test(name);
     }
 }
 exports.UnitTestExplorerProvider = UnitTestExplorerProvider;

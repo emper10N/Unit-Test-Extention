@@ -72,7 +72,11 @@ class ApiService {
     }
     async post(url, data) {
         try {
+            console.log("Making POST request to:", url);
+            console.log("Request data:", data);
+            console.log("Request headers:", this.api.defaults.headers);
             const response = await this.api.post(this._baseUrl + url, data);
+            console.log("Response:", response.data);
             return response.data;
         }
         catch (error) {
@@ -82,7 +86,7 @@ class ApiService {
     }
     async put(url, data) {
         try {
-            const response = await this.api.put(this._baseUrl + url, data);
+            const response = await this.api.put(url, data);
             return response.data;
         }
         catch (error) {
@@ -101,15 +105,20 @@ class ApiService {
         }
     }
     handleError(error) {
+        console.error("API Error:", error);
         if (error.response) {
-            vscode.window.showErrorMessage(`API Error: ${error.response.data.message}`);
+            console.error("Response data:", error.response.data);
+            console.error("Response status:", error.response.status);
+            console.error("Response headers:", error.response.headers);
+            console.error("Request config:", error.config);
+            vscode.window.showErrorMessage(`API Error: ${error.response.data.message || "Unknown error"}`);
         }
         else if (error.request) {
-            // The request was made but no response was received
+            console.error("No response received:", error.request);
             vscode.window.showErrorMessage("No response from server. Please check your connection.");
         }
         else {
-            // Something happened in setting up the request that triggered an Error
+            console.error("Request setup error:", error.message);
             vscode.window.showErrorMessage(`Request Error: ${error.message}`);
         }
     }
