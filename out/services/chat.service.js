@@ -2,17 +2,17 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChatService = void 0;
 class ChatService {
-    constructor(apiService) {
-        this.apiService = apiService;
+    constructor(_apiService) {
+        this._apiService = _apiService;
     }
     async getMessages(limit = 50, before) {
-        return this.apiService.get("/chat/messages", {
+        return this._apiService.get("/chat/messages", {
             limit,
             before,
         });
     }
     async sendMessage(content, type = "text", metadata) {
-        return this.apiService.post("/chat/messages", {
+        return this._apiService.post("/chat/messages", {
             content,
             type,
             metadata,
@@ -25,20 +25,32 @@ class ChatService {
         return this.sendMessage("Test shared", "test", { testId });
     }
     async deleteMessage(messageId) {
-        await this.apiService.delete(`/chat/messages/${messageId}`);
+        await this._apiService.delete(`/chat/messages/${messageId}`);
     }
     async editMessage(messageId, content) {
-        return this.apiService.put(`/chat/messages/${messageId}`, {
+        return this._apiService.put(`/chat/messages/${messageId}`, {
             content,
         });
     }
     async getMessage(messageId) {
-        return this.apiService.get(`/chat/messages/${messageId}`);
+        return this._apiService.get(`/chat/messages/${messageId}`);
     }
     async searchMessages(query) {
-        return this.apiService.get("/chat/messages/search", {
+        return this._apiService.get("/chat/messages/search", {
             query,
         });
+    }
+    async createChat(name) {
+        try {
+            const response = await this._apiService.post("/api/v1/chats", { name });
+            return {
+                chatId: response.chatId,
+                name: name,
+            };
+        }
+        catch (error) {
+            throw new Error("Failed to create chat");
+        }
     }
 }
 exports.ChatService = ChatService;

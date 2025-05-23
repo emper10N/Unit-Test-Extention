@@ -1,27 +1,14 @@
 import * as vscode from "vscode";
 import { AuthService } from "../services/auth.service";
-import { TestService, TestCase } from "../services/test.service";
 
 export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "unitTestExplorer";
   private _view?: vscode.WebviewView;
-  private _tests: TestCase[] = [];
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
-    private readonly _testService: TestService,
     private readonly _authService: AuthService
   ) {}
-
-  public async refreshTests() {
-    if (this._authService.isAuthenticated()) {
-      this._tests = await this._testService.getTests();
-      this._view?.webview.postMessage({
-        type: "testsUpdated",
-        tests: this._tests,
-      });
-    }
-  }
 
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -47,7 +34,6 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
               type: "loginSuccess",
               user: { username: data.username },
             });
-            await this.refreshTests();
           } catch (error) {
             this._view?.webview.postMessage({
               type: "loginError",
@@ -64,7 +50,6 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
             });
             // Auto login after successful registration
             await this._authService.login(data.username, data.password);
-            await this.refreshTests();
           } catch (error) {
             this._view?.webview.postMessage({
               type: "registerError",
@@ -76,11 +61,6 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
           try {
             await this._authService.logout();
             this._view?.webview.postMessage({ type: "logoutSuccess" });
-            this._tests = [];
-            this._view?.webview.postMessage({
-              type: "testsUpdated",
-              tests: [],
-            });
           } catch (error) {
             this._view?.webview.postMessage({
               type: "logoutError",
@@ -88,44 +68,13 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
             });
           }
           break;
-        case "runTest":
-          try {
-            const result = await this._testService.runTest(data.testId);
-            this._view?.webview.postMessage({
-              type: "testResult",
-              testId: data.testId,
-              result,
-            });
-            await this.refreshTests();
-          } catch (error) {
-            this._view?.webview.postMessage({
-              type: "testError",
-              error: (error as Error).message,
-            });
-          }
-          break;
-        case "runAllTests":
-          try {
-            const results = await this._testService.runAllTests();
-            this._view?.webview.postMessage({
-              type: "allTestsResult",
-              results,
-            });
-            await this.refreshTests();
-          } catch (error) {
-            this._view?.webview.postMessage({
-              type: "testError",
-              error: (error as Error).message,
-            });
-          }
-          break;
       }
     });
 
-    // Initial load of tests if authenticated
-    if (this._authService.isAuthenticated()) {
-      this.refreshTests();
-    }
+    // Initial load - always show auth container first
+    this._view?.webview.postMessage({
+      type: "showAuth",
+    });
   }
 
   private _getHtmlForWebview(webview: vscode.Webview) {
@@ -208,31 +157,6 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                     font-size: 12px;
                     margin-top: 5px;
                 }
-                .test-list {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 10px;
-                }
-                .test-item {
-                    padding: 15px;
-                    border: 1px solid var(--vscode-input-border);
-                    border-radius: 4px;
-                    background: var(--vscode-editor-background);
-                }
-                .test-item.passed {
-                    border-color: var(--vscode-testing-iconPassed);
-                }
-                .test-item.failed {
-                    border-color: var(--vscode-testing-iconFailed);
-                }
-                .test-item.running {
-                    border-color: var(--vscode-testing-iconQueued);
-                }
-                .actions {
-                    display: flex;
-                    gap: 10px;
-                    margin-top: 10px;
-                }
                 .user-info {
                     display: flex;
                     align-items: center;
@@ -241,9 +165,6 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                     background: var(--vscode-editor-background);
                     border-radius: 4px;
                     margin-bottom: 20px;
-                }
-                .user-avatar {
-                    display: none;
                 }
             </style>
         </head>
@@ -289,13 +210,13 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                 <div id="content" style="display: none;">
                     <div id="user-info" class="user-info">
                         <div id="user-name"></div>
+                        <button id="create-chat-button">Create Chat</button>
                     </div>
                     
                     <h2>Unit Test Explorer</h2>
                     <div class="actions">
-                        <button id="run-all-button">Run All Tests</button>
+                        <button id="create-chat-button">Create Chat</button>
                     </div>
-                    <div id="test-list" class="test-list"></div>
                     <button id="logout-button">Logout</button>
                 </div>
             </div>
@@ -306,8 +227,11 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                     const content = document.getElementById('content');
                     const loginForm = document.getElementById('login-form');
                     const registerForm = document.getElementById('register-form');
-                    const testList = document.getElementById('test-list');
                     const userName = document.getElementById('user-name');
+                    
+                    // Show auth container by default
+                    authContainer.style.display = 'block';
+                    content.style.display = 'none';
                     
                     // Tab switching
                     document.querySelectorAll('.auth-tab').forEach(tab => {
@@ -330,6 +254,11 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                         const username = document.getElementById('login-username').value;
                         const password = document.getElementById('login-password').value;
                         
+                        if (!username || !password) {
+                            document.getElementById('login-error').textContent = 'Please fill in all fields';
+                            return;
+                        }
+                        
                         vscode.postMessage({
                             type: 'login',
                             username,
@@ -342,6 +271,11 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                         const username = document.getElementById('register-username').value;
                         const password = document.getElementById('register-password').value;
                         const confirmPassword = document.getElementById('register-confirm-password').value;
+                        
+                        if (!username || !password || !confirmPassword) {
+                            document.getElementById('register-error').textContent = 'Please fill in all fields';
+                            return;
+                        }
                         
                         if (password !== confirmPassword) {
                             document.getElementById('register-error').textContent = 'Passwords do not match';
@@ -362,11 +296,15 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                         });
                     });
 
-                    // Handle run all tests
-                    document.getElementById('run-all-button').addEventListener('click', () => {
-                        vscode.postMessage({
-                            type: 'runAllTests'
-                        });
+                    // Handle create chat
+                    document.getElementById('create-chat-button').addEventListener('click', () => {
+                        const chatName = prompt('Enter chat name:');
+                        if (chatName) {
+                            vscode.postMessage({
+                                type: 'createChat',
+                                name: chatName
+                            });
+                        }
                     });
                     
                     // Handle messages from extension
@@ -374,6 +312,10 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                         const message = event.data;
                         
                         switch (message.type) {
+                            case 'showAuth':
+                                authContainer.style.display = 'block';
+                                content.style.display = 'none';
+                                break;
                             case 'loginSuccess':
                             case 'registerSuccess':
                                 authContainer.style.display = 'none';
@@ -404,23 +346,14 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                                 document.getElementById('register-username').value = '';
                                 document.getElementById('register-password').value = '';
                                 document.getElementById('register-confirm-password').value = '';
-                                testList.innerHTML = '';
                                 break;
                             case 'logoutError':
                                 document.getElementById('login-error').textContent = message.error;
                                 break;
-                            case 'testsUpdated':
-                                updateTestList(message.tests);
+                            case 'chatCreated':
+                                alert('Chat created with ID: ' + message.chatId);
                                 break;
-                            case 'testResult':
-                                updateTestStatus(message.testId, message.result);
-                                break;
-                            case 'allTestsResult':
-                                message.results.forEach(result => {
-                                    updateTestStatus(result.id, result);
-                                });
-                                break;
-                            case 'testError':
+                            case 'chatError':
                                 document.getElementById('login-error').textContent = message.error;
                                 break;
                         }
@@ -428,41 +361,6 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
 
                     function updateUserInfo(user) {
                         userName.textContent = user.username;
-                    }
-
-                    function updateTestList(tests) {
-                        testList.innerHTML = tests.map(test => \`
-                            <div class="test-item \${test.status}" id="test-\${test.id}">
-                                <h3>\${test.name}</h3>
-                                <p>\${test.description}</p>
-                                <div class="actions">
-                                    <button onclick="runTest('\${test.id}')">Run Test</button>
-                                </div>
-                            </div>
-                        \`).join('');
-                    }
-
-                    function updateTestStatus(testId, result) {
-                        const testElement = document.getElementById(\`test-\${testId}\`);
-                        if (testElement) {
-                            testElement.className = \`test-item \${result.status}\`;
-                            if (result.result) {
-                                const resultElement = document.createElement('div');
-                                resultElement.innerHTML = \`
-                                    <p>Output: \${result.result.output}</p>
-                                    \${result.result.error ? \`<p class="error">Error: \${result.result.error}</p>\` : ''}
-                                    <p>Execution time: \${result.result.executionTime}ms</p>
-                                \`;
-                                testElement.appendChild(resultElement);
-                            }
-                        }
-                    }
-
-                    function runTest(testId) {
-                        vscode.postMessage({
-                            type: 'runTest',
-                            testId
-                        });
                     }
                 })();
             </script>
