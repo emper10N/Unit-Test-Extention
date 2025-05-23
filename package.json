@@ -1,0 +1,100 @@
+{
+  "name": "unit-test-extension",
+  "displayName": "Unit Test Extension",
+  "description": "Extension for working with unit tests",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:unit-test-extension.start",
+    "onCommand:unit-test-extension.createTest",
+    "onCommand:unit-test-extension.runTest",
+    "onCommand:unit-test-extension.runAllTests",
+    "onView:unitTestExplorer",
+    "onView:unitTestChat"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "unit-test-extension.start",
+        "title": "Start Unit Test Extension"
+      },
+      {
+        "command": "unit-test-extension.createTest",
+        "title": "Create Test from Current File"
+      },
+      {
+        "command": "unit-test-extension.runTest",
+        "title": "Run Current Test"
+      },
+      {
+        "command": "unit-test-extension.runAllTests",
+        "title": "Run All Tests"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "unit-test-explorer",
+          "title": "Unit Test Explorer",
+          "icon": "resources/test.svg"
+        },
+        {
+          "id": "unit-test-chat",
+          "title": "Unit Test Chat",
+          "icon": "resources/chat.svg"
+        }
+      ]
+    },
+    "views": {
+      "unit-test-explorer": [
+        {
+          "type": "webview",
+          "id": "unitTestExplorer",
+          "name": "Unit Test Explorer"
+        }
+      ],
+      "unit-test-chat": [
+        {
+          "type": "webview",
+          "id": "unitTestChat",
+          "name": "Chat"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Unit Test Extension",
+      "properties": {
+        "unitTestExtension.apiUrl": {
+          "type": "string",
+          "default": "",
+          "description": "API URL for the extension"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^16.18.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.1",
+    "@typescript-eslint/parser": "^6.13.1",
+    "eslint": "^8.54.0",
+    "typescript": "^5.3.2"
+  },
+  "dependencies": {
+    "axios": "^1.6.2"
+  }
+}

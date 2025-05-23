@@ -1,0 +1,58 @@
+<div>
+  <div class="wrapper">
+    <label class="title">Unit-тест</label>
+    <form
+      class="modal-container__form"
+      [formGroup]="registerForm"
+      (ngSubmit)="onSubmit()"
+    >
+      <div style="margin-top: 100px">
+        <div class="content">
+          <label>Логин</label>
+          <app-input-control
+            [input]="{ type: 'text', placeholder: '' }"
+            formControlName="username"
+          />
+          <ng-container
+            *ngIf="
+              registerForm.controls['username'].invalid &&
+              registerForm.controls['username'].value.length > 0
+            "
+          >
+            <app-validators-handler
+              [errors]="registerForm.controls['username'].errors"
+            ></app-validators-handler>
+          </ng-container>
+        </div>
+        <div class="content">
+          <label>Пароль</label>
+          <app-input-control
+            [input]="{ type: 'password', placeholder: '' }"
+            formControlName="password"
+          />
+          <ng-container
+            *ngIf="
+              registerForm.controls['password'].invalid &&
+              registerForm.controls['password'].value.length > 0
+            "
+          >
+            <app-validators-handler
+              [errors]="registerForm.controls['password'].errors"
+            ></app-validators-handler>
+          </ng-container>
+        </div>
+      </div>
+    </form>
+    <div class="modal-container__buttons-container">
+      <button
+        class="submit-btn"
+        [class.dark-theme]="themeService.isDarkTheme()"
+        type="submit"
+        [disabled]="registerForm.invalid"
+        (click)="onSubmit()"
+      >
+        Войти
+      </button>
+    </div>
+  </div>
+</div>
