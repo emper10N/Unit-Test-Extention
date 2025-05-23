@@ -220,6 +220,48 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
             chatId: data.chatId,
           });
           break;
+        case "requestChatName":
+          try {
+            const chatName = await vscode.window.showInputBox({
+              prompt: "Enter chat name",
+              placeHolder: "My Chat",
+            });
+
+            if (chatName) {
+              const isAuthenticated = await this._authService.checkAuth();
+              if (!isAuthenticated) {
+                this._view?.webview.postMessage({
+                  type: "chatError",
+                  error: "You must be logged in to create a chat",
+                });
+                return;
+              }
+
+              console.log("Creating chat with name:", chatName);
+              const result = await this._apiService.post<ChatResponse>(
+                "/api/v1/chats",
+                {
+                  name: chatName,
+                }
+              );
+              console.log("Chat created successfully:", result);
+
+              this._currentChatId = result.chatId;
+              this._view?.webview.postMessage({
+                type: "chatCreated",
+                chatId: result.chatId,
+              });
+              // Reload chats after creating a new one
+              await this.loadChats();
+            }
+          } catch (error) {
+            console.error("Error requesting chat name:", error);
+            this._view?.webview.postMessage({
+              type: "chatError",
+              error: (error as Error).message || "Failed to create chat",
+            });
+          }
+          break;
       }
     });
 
@@ -629,13 +671,9 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
 
                     // Handle create chat
                     document.getElementById('create-chat-button').addEventListener('click', () => {
-                        const chatName = 'CHAT';
-                        if (chatName) {
-                            vscode.postMessage({
-                                type: 'createChat',
-                                name: chatName
-                            });
-                        }
+                        vscode.postMessage({
+                            type: 'requestChatName'
+                        });
                     });
 
                     // Handle refresh chats
@@ -709,7 +747,11 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                             chatsList.appendChild(noChatsMessage);
                             return;
                         }
-                        chats.forEach(chat => {
+                        // Sort chats by creation date in descending order (newest first)
+                        const sortedChats = [...chats].sort((a, b) => 
+                            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                        );
+                        sortedChats.forEach(chat => {
                             const chatItem = document.createElement('div');
                             chatItem.className = 'chat-item';
                             chatItem.innerHTML = \`

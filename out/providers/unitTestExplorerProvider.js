@@ -1,6 +1,40 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UnitTestExplorerProvider = void 0;
+const vscode = __importStar(require("vscode"));
 class UnitTestExplorerProvider {
     constructor(_extensionUri, _authService, _apiService) {
         this._extensionUri = _extensionUri;
@@ -167,6 +201,43 @@ class UnitTestExplorerProvider {
                         type: "chatOpened",
                         chatId: data.chatId,
                     });
+                    break;
+                case "requestChatName":
+                    try {
+                        const chatName = await vscode.window.showInputBox({
+                            prompt: "Enter chat name",
+                            placeHolder: "My Chat",
+                        });
+                        if (chatName) {
+                            const isAuthenticated = await this._authService.checkAuth();
+                            if (!isAuthenticated) {
+                                this._view?.webview.postMessage({
+                                    type: "chatError",
+                                    error: "You must be logged in to create a chat",
+                                });
+                                return;
+                            }
+                            console.log("Creating chat with name:", chatName);
+                            const result = await this._apiService.post("/api/v1/chats", {
+                                name: chatName,
+                            });
+                            console.log("Chat created successfully:", result);
+                            this._currentChatId = result.chatId;
+                            this._view?.webview.postMessage({
+                                type: "chatCreated",
+                                chatId: result.chatId,
+                            });
+                            // Reload chats after creating a new one
+                            await this.loadChats();
+                        }
+                    }
+                    catch (error) {
+                        console.error("Error requesting chat name:", error);
+                        this._view?.webview.postMessage({
+                            type: "chatError",
+                            error: error.message || "Failed to create chat",
+                        });
+                    }
                     break;
             }
         });
@@ -571,13 +642,9 @@ class UnitTestExplorerProvider {
 
                     // Handle create chat
                     document.getElementById('create-chat-button').addEventListener('click', () => {
-                        const chatName = 'CHAT';
-                        if (chatName) {
-                            vscode.postMessage({
-                                type: 'createChat',
-                                name: chatName
-                            });
-                        }
+                        vscode.postMessage({
+                            type: 'requestChatName'
+                        });
                     });
 
                     // Handle refresh chats
@@ -651,7 +718,11 @@ class UnitTestExplorerProvider {
                             chatsList.appendChild(noChatsMessage);
                             return;
                         }
-                        chats.forEach(chat => {
+                        // Sort chats by creation date in descending order (newest first)
+                        const sortedChats = [...chats].sort((a, b) => 
+                            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                        );
+                        sortedChats.forEach(chat => {
                             const chatItem = document.createElement('div');
                             chatItem.className = 'chat-item';
                             chatItem.innerHTML = \`
