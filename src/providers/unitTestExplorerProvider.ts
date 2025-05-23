@@ -31,6 +31,16 @@ interface ChatsResponse {
   chats: Chat[];
 }
 
+interface ChatMessagesResponse {
+  messages: {
+    id: string;
+    chatId: string;
+    order: number;
+    role: string;
+    content: string;
+  }[];
+}
+
 export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "unitTestExplorer";
   private _view?: vscode.WebviewView;
@@ -220,6 +230,8 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
             type: "chatOpened",
             chatId: data.chatId,
           });
+          // Load chat messages when opening chat
+          this.loadChatMessages(data.chatId);
           break;
         case "requestChatName":
           try {
@@ -294,6 +306,33 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
       this._view?.webview.postMessage({
         type: "chatsError",
         error: (error as Error).message || "Failed to load chats",
+      });
+    }
+  }
+
+  private async loadChatMessages(chatId: string) {
+    try {
+      const isAuthenticated = await this._authService.checkAuth();
+      if (!isAuthenticated) {
+        console.log("User is not authenticated, skipping messages load");
+        return;
+      }
+
+      console.log("Loading chat messages...");
+      const response = await this._apiService.get<ChatMessagesResponse>(
+        `/api/v1/chats/${chatId}/messages`
+      );
+      console.log("Chat messages loaded:", response);
+
+      this._view?.webview.postMessage({
+        type: "messagesLoaded",
+        messages: response.messages,
+      });
+    } catch (error) {
+      console.error("Error loading chat messages:", error);
+      this._view?.webview.postMessage({
+        type: "messagesError",
+        error: (error as Error).message || "Failed to load messages",
       });
     }
   }
@@ -424,13 +463,18 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                     padding: 10px;
                     border-radius: 4px;
                     max-width: 80%;
+                    opacity: 1;
+                    transition: opacity 0.3s ease;
+                }
+                .message.generating {
+                    opacity: 0.7;
                 }
                 .message.user {
                     align-self: flex-end;
                     background: var(--vscode-button-background);
                     color: var(--vscode-button-foreground);
                 }
-                .message.model {
+                .message.assistant {
                     align-self: flex-start;
                     background: var(--vscode-editor-inactiveSelectionBackground);
                 }
@@ -504,6 +548,32 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                     padding: 4px 8px;
                     font-size: 12px;
                     margin-left: 10px;
+                }
+                .typing-indicator {
+                    display: flex;
+                    gap: 4px;
+                    padding: 8px;
+                    background: var(--vscode-editor-inactiveSelectionBackground);
+                    border-radius: 4px;
+                    align-self: flex-start;
+                    margin-top: 8px;
+                }
+                .typing-dot {
+                    width: 8px;
+                    height: 8px;
+                    background: var(--vscode-foreground);
+                    border-radius: 50%;
+                    animation: typing 1s infinite ease-in-out;
+                }
+                .typing-dot:nth-child(2) {
+                    animation-delay: 0.2s;
+                }
+                .typing-dot:nth-child(3) {
+                    animation-delay: 0.4s;
+                }
+                @keyframes typing {
+                    0%, 100% { transform: translateY(0); }
+                    50% { transform: translateY(-4px); }
                 }
             </style>
         </head>
@@ -684,12 +754,13 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                         });
                     });
 
-                    function addMessage(content, type, isUser = false) {
+                    function addMessage(content, type, role = 'user') {
                         const messageDiv = document.createElement('div');
-                        messageDiv.className = \`message \${isUser ? 'user' : 'model'} \${type === 'code' ? 'code' : ''}\`;
+                        messageDiv.className = \`message \${role} \${type === 'code' ? 'code' : ''}\`;
                         messageDiv.textContent = content;
                         messagesContainer.appendChild(messageDiv);
                         messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                        return messageDiv;
                     }
                     
                     textTypeButton.addEventListener('click', () => {
@@ -706,9 +777,28 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                         messageInput.placeholder = 'Paste your code here...';
                     });
                     
+                    function showTypingIndicator() {
+                        const indicator = document.createElement('div');
+                        indicator.className = 'typing-indicator';
+                        indicator.innerHTML = \`
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                        \`;
+                        messagesContainer.appendChild(indicator);
+                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                        return indicator;
+                    }
+
                     sendButton.addEventListener('click', () => {
                         const content = messageInput.value.trim();
                         if (!content) return;
+                        
+                        // Add user message
+                        addMessage(content, currentMessageType, 'user');
+                        
+                        // Show typing indicator
+                        const typingIndicator = showTypingIndicator();
                         
                         vscode.postMessage({
                             type: 'sendMessage',
@@ -717,7 +807,6 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                             language: currentMessageType === 'code' ? 'typescript' : undefined
                         });
                         
-                        addMessage(content, currentMessageType, true);
                         messageInput.value = '';
                     });
                     
@@ -829,7 +918,13 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                                 document.getElementById('login-error').textContent = message.error;
                                 break;
                             case 'messageSent':
-                                addMessage(message.content, 'text');
+                                // Remove typing indicator
+                                const typingIndicator = document.querySelector('.typing-indicator');
+                                if (typingIndicator) {
+                                    typingIndicator.remove();
+                                }
+                                // Add assistant message
+                                addMessage(message.content, 'text', 'assistant');
                                 break;
                             case 'messageError':
                                 errorDiv.textContent = message.error;
@@ -848,11 +943,26 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
                                 errorDiv.textContent = '';
                                 currentChatId.textContent = message.chatId;
                                 break;
+                            case 'messagesLoaded':
+                                console.log('Received messages:', message.messages);
+                                displayMessages(message.messages);
+                                break;
+                            case 'messagesError':
+                                console.error('Error loading messages:', message.error);
+                                errorDiv.textContent = message.error;
+                                break;
                         }
                     });
 
                     function updateUserInfo(user) {
                         userName.textContent = user.username;
+                    }
+
+                    function displayMessages(messages) {
+                        messagesContainer.innerHTML = '';
+                        messages.forEach((message) => {
+                            addMessage(message.content, 'text', message.role);
+                        });
                     }
                 })();
             </script>
