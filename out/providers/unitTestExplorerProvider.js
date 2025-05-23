@@ -175,17 +175,18 @@ class UnitTestExplorerProvider {
                             return;
                         }
                         const message = {
-                            content: data.content,
-                            type: data.messageType || "text",
-                            language: data.language,
+                            model: "gpt-3.5-turbo",
+                            chatId: this._currentChatId,
+                            message: data.content,
                         };
-                        const result = await this._apiService.post(`/api/v1/chats/${this._currentChatId}/messages`, message);
+                        const result = await this._apiService.post("/api/v1/messages", message);
                         this._view?.webview.postMessage({
                             type: "messageSent",
                             content: result.content,
                         });
                     }
                     catch (error) {
+                        console.error("Error sending message:", error);
                         this._view?.webview.postMessage({
                             type: "messageError",
                             error: error.message || "Failed to send message",

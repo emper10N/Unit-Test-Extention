@@ -188,14 +188,14 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
               return;
             }
 
-            const message: ChatMessage = {
-              content: data.content,
-              type: data.messageType || "text",
-              language: data.language,
+            const message = {
+              model: "gpt-3.5-turbo",
+              chatId: this._currentChatId,
+              message: data.content,
             };
 
-            const result = await this._apiService.post<ChatResponse>(
-              `/api/v1/chats/${this._currentChatId}/messages`,
+            const result = await this._apiService.post<{ content: string }>(
+              "/api/v1/messages",
               message
             );
 
@@ -204,6 +204,7 @@ export class UnitTestExplorerProvider implements vscode.WebviewViewProvider {
               content: result.content,
             });
           } catch (error) {
+            console.error("Error sending message:", error);
             this._view?.webview.postMessage({
               type: "messageError",
               error: (error as Error).message || "Failed to send message",
