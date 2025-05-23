@@ -39,13 +39,11 @@ const vscode = __importStar(require("vscode"));
 const api_service_1 = require("./services/api.service");
 const auth_service_1 = require("./services/auth.service");
 const unitTestExplorerProvider_1 = require("./providers/unitTestExplorerProvider");
-const chatProvider_1 = require("./providers/chatProvider");
 async function activate(context) {
     const apiService = new api_service_1.ApiService(context);
     const authService = new auth_service_1.AuthService(apiService, context);
     const unitTestExplorerProvider = new unitTestExplorerProvider_1.UnitTestExplorerProvider(context.extensionUri, authService, apiService);
-    const chatProvider = new chatProvider_1.ChatProvider(context.extensionUri);
-    context.subscriptions.push(vscode.window.registerWebviewViewProvider(unitTestExplorerProvider_1.UnitTestExplorerProvider.viewType, unitTestExplorerProvider), vscode.window.registerWebviewViewProvider(chatProvider_1.ChatProvider.viewType, chatProvider));
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider(unitTestExplorerProvider_1.UnitTestExplorerProvider.viewType, unitTestExplorerProvider));
     let startCommand = vscode.commands.registerCommand("unit-test-extension.start", async () => {
         try {
             const isAuthenticated = await authService.checkAuth();

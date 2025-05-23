@@ -14,7 +14,6 @@ class UnitTestExplorerProvider {
             localResourceRoots: [this._extensionUri],
         };
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
-        // Handle messages from the webview
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
                 case "login":
@@ -31,6 +30,8 @@ class UnitTestExplorerProvider {
                             type: "loginSuccess",
                             user: { username: data.username },
                         });
+                        // Load chats after successful login
+                        await this.loadChats();
                     }
                     catch (error) {
                         this._view?.webview.postMessage({
@@ -54,6 +55,8 @@ class UnitTestExplorerProvider {
                             user: { username: data.username },
                         });
                         await this._authService.login(data.username, data.password);
+                        // Load chats after successful registration and login
+                        await this.loadChats();
                     }
                     catch (error) {
                         this._view?.webview.postMessage({
@@ -104,10 +107,13 @@ class UnitTestExplorerProvider {
                             name: trimmedName,
                         });
                         console.log("Chat created successfully:", result);
+                        this._currentChatId = result.chatId;
                         this._view?.webview.postMessage({
                             type: "chatCreated",
                             chatId: result.chatId,
                         });
+                        // Reload chats after creating a new one
+                        await this.loadChats();
                     }
                     catch (error) {
                         console.error("Error creating chat:", error);
@@ -117,11 +123,79 @@ class UnitTestExplorerProvider {
                         });
                     }
                     break;
+                case "sendMessage":
+                    try {
+                        const isAuthenticated = await this._authService.checkAuth();
+                        if (!isAuthenticated) {
+                            this._view?.webview.postMessage({
+                                type: "messageError",
+                                error: "You must be logged in to send messages",
+                            });
+                            return;
+                        }
+                        if (!this._currentChatId) {
+                            this._view?.webview.postMessage({
+                                type: "messageError",
+                                error: "No active chat",
+                            });
+                            return;
+                        }
+                        const message = {
+                            content: data.content,
+                            type: data.messageType || "text",
+                            language: data.language,
+                        };
+                        const result = await this._apiService.post(`/api/v1/chats/${this._currentChatId}/messages`, message);
+                        this._view?.webview.postMessage({
+                            type: "messageSent",
+                            content: result.content,
+                        });
+                    }
+                    catch (error) {
+                        this._view?.webview.postMessage({
+                            type: "messageError",
+                            error: error.message || "Failed to send message",
+                        });
+                    }
+                    break;
+                case "loadChats":
+                    await this.loadChats();
+                    break;
+                case "openChat":
+                    this._currentChatId = data.chatId;
+                    this._view?.webview.postMessage({
+                        type: "chatOpened",
+                        chatId: data.chatId,
+                    });
+                    break;
             }
         });
         this._view?.webview.postMessage({
             type: "showAuth",
         });
+    }
+    async loadChats() {
+        try {
+            const isAuthenticated = await this._authService.checkAuth();
+            if (!isAuthenticated) {
+                console.log("User is not authenticated, skipping chat load");
+                return;
+            }
+            console.log("Loading chats...");
+            const response = await this._apiService.get("/api/v1/chats");
+            console.log("Chats loaded:", response);
+            this._view?.webview.postMessage({
+                type: "chatsLoaded",
+                chats: response.chats,
+            });
+        }
+        catch (error) {
+            console.error("Error loading chats:", error);
+            this._view?.webview.postMessage({
+                type: "chatsError",
+                error: error.message || "Failed to load chats",
+            });
+        }
     }
     _getHtmlForWebview(webview) {
         return `<!DOCTYPE html>
@@ -140,6 +214,7 @@ class UnitTestExplorerProvider {
                     display: flex;
                     flex-direction: column;
                     gap: 20px;
+                    height: 100vh;
                 }
                 .auth-container {
                     display: flex;
@@ -212,6 +287,123 @@ class UnitTestExplorerProvider {
                     border-radius: 4px;
                     margin-bottom: 20px;
                 }
+                .chat-container {
+                    display: none;
+                    flex-direction: column;
+                    gap: 20px;
+                    height: 100%;
+                }
+                .chat-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 10px;
+                    background: var(--vscode-editor-background);
+                    border-radius: 4px;
+                }
+                .chat-id {
+                    font-family: var(--vscode-editor-font-family);
+                    color: var(--vscode-descriptionForeground);
+                }
+                .back-button {
+                    padding: 4px 8px;
+                    font-size: 12px;
+                }
+                .messages {
+                    flex: 1;
+                    overflow-y: auto;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                    padding: 10px;
+                    background: var(--vscode-editor-background);
+                    border-radius: 4px;
+                }
+                .message {
+                    padding: 10px;
+                    border-radius: 4px;
+                    max-width: 80%;
+                }
+                .message.user {
+                    align-self: flex-end;
+                    background: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                }
+                .message.model {
+                    align-self: flex-start;
+                    background: var(--vscode-editor-inactiveSelectionBackground);
+                }
+                .message.code {
+                    font-family: var(--vscode-editor-font-family);
+                    white-space: pre-wrap;
+                }
+                .input-container {
+                    display: flex;
+                    gap: 10px;
+                }
+                textarea {
+                    flex: 1;
+                    padding: 8px;
+                    border: 1px solid var(--vscode-input-border);
+                    background: var(--vscode-input-background);
+                    color: var(--vscode-input-foreground);
+                    border-radius: 4px;
+                    resize: vertical;
+                    min-height: 60px;
+                }
+                textarea:focus {
+                    outline: 1px solid var(--vscode-focusBorder);
+                }
+                .message-type-selector {
+                    display: flex;
+                    gap: 10px;
+                    margin-bottom: 10px;
+                }
+                .message-type-selector button {
+                    flex: 1;
+                }
+                .message-type-selector button.active {
+                    background: var(--vscode-button-hoverBackground);
+                }
+                .chats-list {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                    margin-top: 20px;
+                }
+                .chat-item {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 10px;
+                    background: var(--vscode-editor-background);
+                    border-radius: 4px;
+                    cursor: pointer;
+                }
+                .chat-item:hover {
+                    background: var(--vscode-editor-hoverHighlightBackground);
+                }
+                .chat-item-info {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 5px;
+                }
+                .chat-item-name {
+                    font-weight: 500;
+                }
+                .chat-item-date {
+                    font-size: 12px;
+                    color: var(--vscode-descriptionForeground);
+                }
+                .chat-item-messages {
+                    font-size: 12px;
+                    color: var(--vscode-descriptionForeground);
+                }
+                .refresh-button {
+                    padding: 4px 8px;
+                    font-size: 12px;
+                    margin-left: 10px;
+                }
             </style>
         </head>
         <body>
@@ -258,11 +450,33 @@ class UnitTestExplorerProvider {
                         <div id="user-name"></div>
                     </div>
                     
-                    <h2>Unit Test Explorer</h2>
-                    <div class="actions">
-                        <button id="create-chat-button">Create Chat</button>
+                    <div class="header">
+                        <h2>Unit Test Explorer</h2>
+                        <div class="actions">
+                            <button id="create-chat-button">Create Chat</button>
+                            <button id="refresh-chats-button" class="refresh-button">↻</button>
+                        </div>
                     </div>
+
+                    <div id="chats-list" class="chats-list"></div>
                     <button id="logout-button">Logout</button>
+                </div>
+
+                <div id="chat-container" class="chat-container">
+                    <div class="chat-header">
+                        <div class="chat-id">Chat ID: <span id="current-chat-id"></span></div>
+                        <button id="back-button" class="back-button">← Back</button>
+                    </div>
+                    <div class="message-type-selector">
+                        <button id="text-type" class="active">Text</button>
+                        <button id="code-type">Code</button>
+                    </div>
+                    <div class="messages" id="messages"></div>
+                    <div class="input-container">
+                        <textarea id="message-input" placeholder="Type your message..."></textarea>
+                        <button id="send-button">Send</button>
+                    </div>
+                    <div id="chat-error" class="error"></div>
                 </div>
             </div>
             <script>
@@ -270,13 +484,27 @@ class UnitTestExplorerProvider {
                     const vscode = acquireVsCodeApi();
                     const authContainer = document.getElementById('auth-container');
                     const content = document.getElementById('content');
+                    const chatContainer = document.getElementById('chat-container');
                     const loginForm = document.getElementById('login-form');
                     const registerForm = document.getElementById('register-form');
                     const userName = document.getElementById('user-name');
+                    const messagesContainer = document.getElementById('messages');
+                    const messageInput = document.getElementById('message-input');
+                    const sendButton = document.getElementById('send-button');
+                    const errorDiv = document.getElementById('chat-error');
+                    const textTypeButton = document.getElementById('text-type');
+                    const codeTypeButton = document.getElementById('code-type');
+                    const currentChatId = document.getElementById('current-chat-id');
+                    const backButton = document.getElementById('back-button');
+                    const chatsList = document.getElementById('chats-list');
+                    const refreshChatsButton = document.getElementById('refresh-chats-button');
+                    
+                    let currentMessageType = 'text';
                     
                     // Show auth container by default
                     authContainer.style.display = 'block';
                     content.style.display = 'none';
+                    chatContainer.style.display = 'none';
                     
                     // Tab switching
                     document.querySelectorAll('.auth-tab').forEach(tab => {
@@ -351,6 +579,97 @@ class UnitTestExplorerProvider {
                             });
                         }
                     });
+
+                    // Handle refresh chats
+                    refreshChatsButton.addEventListener('click', () => {
+                        vscode.postMessage({
+                            type: 'loadChats'
+                        });
+                    });
+
+                    function addMessage(content, type, isUser = false) {
+                        const messageDiv = document.createElement('div');
+                        messageDiv.className = \`message \${isUser ? 'user' : 'model'} \${type === 'code' ? 'code' : ''}\`;
+                        messageDiv.textContent = content;
+                        messagesContainer.appendChild(messageDiv);
+                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                    }
+                    
+                    textTypeButton.addEventListener('click', () => {
+                        currentMessageType = 'text';
+                        textTypeButton.classList.add('active');
+                        codeTypeButton.classList.remove('active');
+                        messageInput.placeholder = 'Type your message...';
+                    });
+                    
+                    codeTypeButton.addEventListener('click', () => {
+                        currentMessageType = 'code';
+                        codeTypeButton.classList.add('active');
+                        textTypeButton.classList.remove('active');
+                        messageInput.placeholder = 'Paste your code here...';
+                    });
+                    
+                    sendButton.addEventListener('click', () => {
+                        const content = messageInput.value.trim();
+                        if (!content) return;
+                        
+                        vscode.postMessage({
+                            type: 'sendMessage',
+                            content,
+                            messageType: currentMessageType,
+                            language: currentMessageType === 'code' ? 'typescript' : undefined
+                        });
+                        
+                        addMessage(content, currentMessageType, true);
+                        messageInput.value = '';
+                    });
+                    
+                    messageInput.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            sendButton.click();
+                        }
+                    });
+
+                    backButton.addEventListener('click', () => {
+                        content.style.display = 'block';
+                        chatContainer.style.display = 'none';
+                    });
+
+                    function formatDate(dateString) {
+                        const date = new Date(dateString);
+                        return date.toLocaleString();
+                    }
+
+                    function updateChatsList(chats) {
+                        console.log('Updating chats list with:', chats);
+                        chatsList.innerHTML = '';
+                        if (!chats || chats.length === 0) {
+                            const noChatsMessage = document.createElement('div');
+                            noChatsMessage.className = 'chat-item';
+                            noChatsMessage.textContent = 'No chats available';
+                            chatsList.appendChild(noChatsMessage);
+                            return;
+                        }
+                        chats.forEach(chat => {
+                            const chatItem = document.createElement('div');
+                            chatItem.className = 'chat-item';
+                            chatItem.innerHTML = \`
+                                <div class="chat-item-info">
+                                    <div class="chat-item-name">\${chat.name}</div>
+                                    <div class="chat-item-date">Created: \${formatDate(chat.createdAt)}</div>
+                                    <div class="chat-item-messages">Messages: \${chat.messages ? chat.messages.length : 0}</div>
+                                </div>
+                            \`;
+                            chatItem.addEventListener('click', () => {
+                                vscode.postMessage({
+                                    type: 'openChat',
+                                    chatId: chat.chatId
+                                });
+                            });
+                            chatsList.appendChild(chatItem);
+                        });
+                    }
                     
                     // Handle messages from extension
                     window.addEventListener('message', event => {
@@ -360,11 +679,13 @@ class UnitTestExplorerProvider {
                             case 'showAuth':
                                 authContainer.style.display = 'block';
                                 content.style.display = 'none';
+                                chatContainer.style.display = 'none';
                                 break;
                             case 'loginSuccess':
                             case 'registerSuccess':
                                 authContainer.style.display = 'none';
                                 content.style.display = 'block';
+                                chatContainer.style.display = 'none';
                                 document.getElementById('login-error').textContent = '';
                                 document.getElementById('register-error').textContent = '';
                                 if (message.user) {
@@ -383,6 +704,7 @@ class UnitTestExplorerProvider {
                             case 'logoutSuccess':
                                 authContainer.style.display = 'block';
                                 content.style.display = 'none';
+                                chatContainer.style.display = 'none';
                                 document.getElementById('login-error').textContent = '';
                                 document.getElementById('register-error').textContent = '';
                                 // Clear form fields
@@ -396,10 +718,34 @@ class UnitTestExplorerProvider {
                                 document.getElementById('login-error').textContent = message.error;
                                 break;
                             case 'chatCreated':
-                                alert('Chat created with ID: ' + message.chatId);
+                                content.style.display = 'none';
+                                chatContainer.style.display = 'flex';
+                                messagesContainer.innerHTML = '';
+                                errorDiv.textContent = '';
+                                currentChatId.textContent = message.chatId;
                                 break;
                             case 'chatError':
                                 document.getElementById('login-error').textContent = message.error;
+                                break;
+                            case 'messageSent':
+                                addMessage(message.content, 'text');
+                                break;
+                            case 'messageError':
+                                errorDiv.textContent = message.error;
+                                break;
+                            case 'chatsLoaded':
+                                console.log('Received chats:', message.chats);
+                                updateChatsList(message.chats);
+                                break;
+                            case 'chatsError':
+                                console.error('Error loading chats:', message.error);
+                                break;
+                            case 'chatOpened':
+                                content.style.display = 'none';
+                                chatContainer.style.display = 'flex';
+                                messagesContainer.innerHTML = '';
+                                errorDiv.textContent = '';
+                                currentChatId.textContent = message.chatId;
                                 break;
                         }
                     });
@@ -413,11 +759,9 @@ class UnitTestExplorerProvider {
         </html>`;
     }
     validateUsername(username) {
-        // Проверяем, что имя пользователя содержит только буквы и цифры
         return /^[a-zA-Z0-9]+$/.test(username);
     }
     validateChatName(name) {
-        // Проверяем, что имя чата содержит только буквы, цифры, пробелы и базовую пунктуацию
         return /^[a-zA-Z0-9\s.,!?-]+$/.test(name);
     }
 }

@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 import { ApiService } from "./services/api.service";
 import { AuthService } from "./services/auth.service";
 import { UnitTestExplorerProvider } from "./providers/unitTestExplorerProvider";
-import { ChatProvider } from "./providers/chatProvider";
 
 export async function activate(context: vscode.ExtensionContext) {
   const apiService = new ApiService(context);
@@ -14,16 +13,10 @@ export async function activate(context: vscode.ExtensionContext) {
     apiService
   );
 
-  const chatProvider = new ChatProvider(context.extensionUri);
-
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
       UnitTestExplorerProvider.viewType,
       unitTestExplorerProvider
-    ),
-    vscode.window.registerWebviewViewProvider(
-      ChatProvider.viewType,
-      chatProvider
     )
   );
 

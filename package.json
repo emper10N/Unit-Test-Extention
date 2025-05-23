@@ -14,8 +14,7 @@
     "onCommand:unit-test-extension.createTest",
     "onCommand:unit-test-extension.runTest",
     "onCommand:unit-test-extension.runAllTests",
-    "onView:unitTestExplorer",
-    "onView:unitTestChat"
+    "onView:unitTestExplorer"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -43,11 +42,6 @@
           "id": "unit-test-explorer",
           "title": "Unit Test Explorer",
           "icon": "resources/test.svg"
-        },
-        {
-          "id": "unit-test-chat",
-          "title": "Unit Test Chat",
-          "icon": "resources/chat.svg"
         }
       ]
     },
@@ -57,13 +51,6 @@
           "type": "webview",
           "id": "unitTestExplorer",
           "name": "Unit Test Explorer"
-        }
-      ],
-      "unit-test-chat": [
-        {
-          "type": "webview",
-          "id": "unitTestChat",
-          "name": "Chat"
         }
       ]
     },
